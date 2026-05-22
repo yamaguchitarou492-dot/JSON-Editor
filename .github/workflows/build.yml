@@ -1,0 +1,73 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-14
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode_15.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build .app (no signing)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project JSONEditor.xcodeproj \
+            -scheme JSONEditor \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            ENABLE_BITCODE=NO \
+            clean build | xcpretty || true
+
+      - name: Locate .app
+        id: locate
+        run: |
+          APP_PATH=$(find build/Build/Products -name "*.app" -maxdepth 4 -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: .app not found"
+            find build -name "*.app" -type d
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R "${{ steps.locate.outputs.app_path }}" Payload/
+          zip -qr JSONEditor.ipa Payload
+          ls -la JSONEditor.ipa
+          echo "IPA size: $(du -h JSONEditor.ipa | cut -f1)"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: JSONEditor-ipa
+          path: JSONEditor.ipa
+          if-no-files-found: error
+          retention-days: 30
