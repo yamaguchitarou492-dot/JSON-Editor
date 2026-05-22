@@ -8,15 +8,20 @@ on:
 jobs:
   build:
     name: Build IPA
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode_15.app/Contents/Developer
+      - name: Select latest Xcode
+        run: |
+          ls /Applications/ | grep -i Xcode || true
+          LATEST=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$LATEST" ]; then LATEST=$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1); fi
+          echo "Using: $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -29,12 +34,13 @@ jobs:
 
       - name: Build .app (no signing)
         run: |
-          set -o pipefail
+          set -eo pipefail
           xcodebuild \
             -project JSONEditor.xcodeproj \
             -scheme JSONEditor \
             -configuration Release \
             -sdk iphoneos \
+            -destination "generic/platform=iOS" \
             -derivedDataPath build \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
@@ -42,7 +48,7 @@ jobs:
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
             ENABLE_BITCODE=NO \
-            clean build | xcpretty || true
+            clean build
 
       - name: Locate .app
         id: locate
